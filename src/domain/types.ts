@@ -86,6 +86,33 @@ export interface Settings {
   studySessionReminders: boolean;
   defaultStudyGenerator: "ai" | "basic";
   allowAiNoteProcessing: boolean;
+  country: string; // ISO 3166-1 alpha-2 country code for holidays
+}
+
+// Lesson plan types
+
+export type DayOfWeek = "monday" | "tuesday" | "wednesday" | "thursday" | "friday" | "saturday" | "sunday";
+
+export interface Lesson extends BaseEntity {
+  subjectId: string;
+  dayOfWeek: DayOfWeek;
+  startTime: string; // HH:MM format
+  endTime: string; // HH:MM format
+  location?: string;
+  instructor?: string;
+  recurrence: "weekly" | "biweekly"; // For future expansion
+}
+
+// Holiday types
+
+export interface Holiday {
+  date: string; // YYYY-MM-DD
+  name: string;
+  localName: string;
+  countryCode: string;
+  fixed: boolean;
+  global: boolean;
+  types: string[];
 }
 
 // Study module types

@@ -18,6 +18,10 @@ export const STORAGE_KEYS = {
   QUIZZES: `${STORAGE_PREFIX}.quizzes`,
   QUIZ_ATTEMPTS: `${STORAGE_PREFIX}.quiz_attempts`,
   STUDY_SESSIONS: `${STORAGE_PREFIX}.study_sessions`,
+  LESSONS: `${STORAGE_PREFIX}.lessons`,
+  HOLIDAYS: `${STORAGE_PREFIX}.holidays`,
+  HOLIDAYS_LAST_FETCH: `${STORAGE_PREFIX}.holidays_last_fetch`,
+  COUNTRY_CONFIGURED: `${STORAGE_PREFIX}.country_configured`,
 } as const;
 
 export const DEFAULT_SETTINGS = {
@@ -27,6 +31,7 @@ export const DEFAULT_SETTINGS = {
   studySessionReminders: false,
   defaultStudyGenerator: "basic" as const,
   allowAiNoteProcessing: true,
+  country: "US", // Default to US, can be changed in settings
 };
 
 export const SUBJECT_COLORS = [

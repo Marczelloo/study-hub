@@ -4,9 +4,13 @@ A modern, local-first student organizer web app built with Next.js, shadcn/ui, a
 
 ## Features
 
-- **Dashboard**: Get an overview of your tasks, deadlines, and upcoming events
+- **Dashboard**: Get an overview of your tasks, deadlines, upcoming events, and holidays
 - **Notes**: Create and organize notes by subject with Markdown support
 - **Calendar**: View and manage your academic schedule with month/week/day views
+  - **Public Holidays**: Automatic holiday display based on your country
+  - **Lesson Plans**: Add recurring lessons with subject colors
+  - **Smart Day-Off**: Lessons hidden on public holidays
+  - **Observance Days**: Valentine's Day, Halloween, and more
 - **Tasks**: Track assignments and to-dos with priority levels and due dates
 - **Study**: Create and study flashcards and quizzes
   - **Flashcard Sets**: Quizlet-style stacked card view with 3D flip animations
@@ -114,6 +118,10 @@ All data is stored locally in the browser's localStorage under the `student_help
 - `student_helper.notes` - Notes
 - `student_helper.tasks` - Tasks
 - `student_helper.events` - Calendar events
+- `student_helper.lessons` - Lesson plans
+- `student_helper.holidays` - Cached public holidays
+- `student_helper.holidays_last_fetch` - Holiday cache timestamp
+- `student_helper.country_configured` - Country selection flag
 - `student_helper.flashcard_sets` - Flashcard sets
 - `student_helper.flashcards` - Individual flashcards
 - `student_helper.quizzes` - Quizzes

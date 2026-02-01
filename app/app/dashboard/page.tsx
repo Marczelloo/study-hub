@@ -1,12 +1,12 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState, useEffect } from "react";
 import Link from "next/link";
-import { CheckCircle2, Clock, AlertCircle, Calendar, FileText } from "lucide-react";
+import { CheckCircle2, Clock, AlertCircle, Calendar, FileText, PartyPopper } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent, Badge } from "@/components/ui";
-import { taskService, calendarService, subjectService, noteService } from "@/services";
+import { taskService, calendarService, subjectService, noteService, holidayService, settingsService } from "@/services";
 import { getDaysUntil, formatDate, formatTime, formatRelativeTime } from "@/lib/dates";
-import type { Task, CalendarEvent, Note } from "@/domain/types";
+import type { Task, CalendarEvent, Note, Holiday } from "@/domain/types";
 
 function StatCard({
   title,
@@ -250,7 +250,111 @@ function RecentNotes({ notes }: { notes: Note[] }) {
   );
 }
 
+function UpcomingHolidays({ holidays }: { holidays: Holiday[] }) {
+  const today = new Date();
+  const todayStr = formatDateStr(today);
+  
+  // Filter and sort upcoming holidays (next 60 days)
+  const upcomingHolidays = useMemo(() => {
+    return holidays
+      .filter((h) => h.date >= todayStr)
+      .sort((a, b) => a.date.localeCompare(b.date))
+      .slice(0, 5);
+  }, [holidays, todayStr]);
+
+  const getDaysUntilHoliday = (dateStr: string) => {
+    const holidayDate = new Date(dateStr + "T00:00:00");
+    const diffTime = holidayDate.getTime() - today.getTime();
+    return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  };
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-base flex items-center gap-2">
+            <PartyPopper className="h-4 w-4 text-amber-500" />
+            Upcoming Holidays
+          </CardTitle>
+          <Link href="/app/calendar" className="text-xs text-primary hover:underline">
+            View calendar
+          </Link>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {upcomingHolidays.length === 0 ? (
+          <div className="text-center py-8 text-muted-foreground">
+            <PartyPopper className="h-8 w-8 mx-auto mb-2 opacity-50" />
+            <p>No upcoming holidays</p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {upcomingHolidays.map((holiday) => {
+              const daysUntil = getDaysUntilHoliday(holiday.date);
+              const isDayOff = holidayService.isDayOff(holiday);
+
+              return (
+                <div
+                  key={`${holiday.date}-${holiday.name}`}
+                  className="flex items-center justify-between p-2 rounded-lg bg-amber-500/10 border border-amber-500/20"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="font-medium text-sm truncate">
+                      🎉 {holiday.name}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {new Date(holiday.date + "T00:00:00").toLocaleDateString("en-US", {
+                        weekday: "short",
+                        month: "short",
+                        day: "numeric",
+                      })}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {isDayOff && (
+                      <Badge variant="secondary" className="text-[10px]">
+                        Day Off
+                      </Badge>
+                    )}
+                    <span className="text-xs text-amber-600 dark:text-amber-400 shrink-0">
+                      {daysUntil === 0 ? "Today!" : daysUntil === 1 ? "Tomorrow" : `in ${daysUntil} days`}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// Helper to format date as YYYY-MM-DD in local timezone
+function formatDateStr(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 export default function DashboardPage() {
+  const [holidays, setHolidays] = useState<Holiday[]>([]);
+
+  // Load holidays on mount
+  useEffect(() => {
+    const loadHolidays = async () => {
+      const settings = settingsService.getSettings();
+      try {
+        const fetchedHolidays = await holidayService.getHolidays(settings.country);
+        setHolidays(fetchedHolidays);
+      } catch (error) {
+        console.error("[Dashboard] Failed to load holidays:", error);
+      }
+    };
+    loadHolidays();
+  }, []);
+
   const data = useMemo(() => {
     if (typeof window === "undefined") {
       return {
@@ -309,8 +413,12 @@ export default function DashboardPage() {
         <NextDeadlines tasks={data.allTasks} />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
         <UpcomingEvents events={data.upcomingEvents} />
+        <UpcomingHolidays holidays={holidays} />
+      </div>
+
+      <div className="grid grid-cols-1">
         <RecentNotes notes={data.recentNotes} />
       </div>
     </div>

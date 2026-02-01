@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef } from "react";
-import { Moon, Bell, User, Download, Upload, Trash2, Database, GraduationCap } from "lucide-react";
+import { Moon, Bell, User, Download, Upload, Trash2, Database, GraduationCap, Globe } from "lucide-react";
 import {
   Button,
   Card,
@@ -23,7 +23,7 @@ import {
   SelectContent,
   SelectItem,
 } from "@/components/ui";
-import { settingsService, authService } from "@/services";
+import { settingsService, authService, holidayService } from "@/services";
 import { generateDemoData, hasDemoData } from "@/lib/demo-seed";
 import { useAuth } from "@/features/auth";
 import { toast } from "sonner";
@@ -43,6 +43,7 @@ export default function SettingsPage() {
         studySessionReminders: false,
         defaultStudyGenerator: "basic" as const,
         allowAiNoteProcessing: true,
+        country: "US",
       };
     }
     return settingsService.getSettings();
@@ -58,6 +59,13 @@ export default function SettingsPage() {
       } else {
         document.documentElement.classList.remove("light");
       }
+    }
+
+    // Refresh holidays when country changes
+    if (key === "country") {
+      holidayService.getHolidays(value as string, true).then(() => {
+        toast.success("Holidays updated for new country");
+      });
     }
   };
 
@@ -248,6 +256,39 @@ export default function SettingsPage() {
               checked={settings.allowAiNoteProcessing !== false}
               onCheckedChange={(checked) => handleSettingChange("allowAiNoteProcessing", checked)}
             />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Regional Settings */}
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Globe className="h-5 w-5" />
+            Regional
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="font-medium">Country</p>
+              <p className="text-sm text-muted-foreground">Select your country for accurate holidays</p>
+            </div>
+            <Select
+              value={settings.country || "US"}
+              onValueChange={(value) => handleSettingChange("country", value)}
+            >
+              <SelectTrigger className="w-48">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="max-h-60">
+                {holidayService.SUPPORTED_COUNTRIES.map((country) => (
+                  <SelectItem key={country.code} value={country.code}>
+                    {country.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         </CardContent>
       </Card>

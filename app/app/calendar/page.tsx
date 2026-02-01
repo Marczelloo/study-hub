@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useMemo } from "react";
-import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
+import { useState, useMemo, useEffect } from "react";
+import { ChevronLeft, ChevronRight, Plus, Calendar as CalendarIcon } from "lucide-react";
 import {
   Button,
   Card,
@@ -22,7 +22,10 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/components/ui";
-import { calendarService, subjectService } from "@/services";
+import { calendarService, subjectService, holidayService, lessonService, settingsService } from "@/services";
+import { storage } from "@/data/storage";
+import { STORAGE_KEYS } from "@/domain/constants";
+import { LessonPlanDialog } from "@/components/calendar/LessonPlanDialog";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import {
@@ -34,8 +37,9 @@ import {
   addDays,
   getStartOfWeek,
   getDayName,
+  getDayOfWeek,
 } from "@/lib/dates";
-import type { CalendarEvent, CalendarEventType, Subject } from "@/domain/types";
+import type { CalendarEvent, CalendarEventType, Subject, Holiday, Lesson } from "@/domain/types";
 
 const EVENT_TYPE_STYLES: Record<CalendarEventType, string> = {
   exam: "bg-red-500/80 text-white",
@@ -213,17 +217,24 @@ function EventForm({
 function MonthCalendar({
   currentDate,
   events,
+  holidays,
+  lessons,
+  subjects,
   selectedDate,
   onDateSelect,
 }: {
   currentDate: Date;
   events: CalendarEvent[];
+  holidays: Holiday[];
+  lessons: Lesson[];
+  subjects: Subject[];
   selectedDate: Date | null;
   onDateSelect: (date: Date) => void;
 }) {
   const days = getCalendarDays(currentDate.getFullYear(), currentDate.getMonth());
   const today = new Date();
   const weekDays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const subjectMap = useMemo(() => new Map(subjects.map((s) => [s.id, s])), [subjects]);
 
   return (
     <div className="flex-1">
@@ -240,6 +251,17 @@ function MonthCalendar({
           const isToday = isSameDay(day, today);
           const isSelected = selectedDate && isSameDay(day, selectedDate);
           const dayEvents = events.filter((e) => isSameDay(e.startAt, day));
+
+          // Find holidays for this day - use local date format
+          const dateStr = formatDateForInput(day);
+          const dayHolidays = holidays.filter((h) => h.date === dateStr);
+
+          // Check if this is a day off (hide lessons on public holidays)
+          const isDayOff = dayHolidays.some((h) => holidayService.isDayOff(h));
+
+          // Find lessons for this day (hide if day off)
+          const dayOfWeek = getDayOfWeek(day);
+          const dayLessons = isDayOff ? [] : lessons.filter((lesson) => lesson.dayOfWeek === dayOfWeek);
 
           return (
             <button
@@ -262,6 +284,31 @@ function MonthCalendar({
                 {day.getDate()}
               </span>
               <div className="mt-1 space-y-0.5">
+                {/* Holidays */}
+                {dayHolidays.map((holiday) => (
+                  <div key={holiday.name} className="text-xs px-1 py-0.5 rounded truncate bg-amber-500/20 text-amber-900 dark:text-amber-100 border border-amber-500/30">
+                    🎉 {holiday.name}
+                  </div>
+                ))}
+                
+                {/* Lessons */}
+                {dayLessons.slice(0, 1).map((lesson) => {
+                  const subject = subjectMap.get(lesson.subjectId);
+                  return (
+                    <div
+                      key={lesson.id}
+                      className="text-xs px-1 py-0.5 rounded truncate"
+                      style={{
+                        backgroundColor: subject?.color ? `${subject.color}20` : undefined,
+                        borderLeft: `2px solid ${subject?.color || '#6366f1'}`,
+                      }}
+                    >
+                      {subject?.name || 'Lesson'} {lesson.startTime}
+                    </div>
+                  );
+                })}
+
+                {/* Events */}
                 {dayEvents.slice(0, 2).map((event) => (
                   <div
                     key={event.id}
@@ -270,8 +317,10 @@ function MonthCalendar({
                     {event.title}
                   </div>
                 ))}
-                {dayEvents.length > 2 && (
-                  <div className="text-xs text-muted-foreground px-1">+{dayEvents.length - 2} more</div>
+                {(dayEvents.length + dayHolidays.length + dayLessons.length) > 3 && (
+                  <div className="text-xs text-muted-foreground px-1">
+                    +{dayEvents.length + dayHolidays.length + dayLessons.length - 3} more
+                  </div>
                 )}
               </div>
             </button>
@@ -302,12 +351,18 @@ function getEventDurationMinutes(startAt: string, endAt?: string): number {
 function WeekCalendar({
   currentDate,
   events,
+  holidays,
+  lessons,
+  subjects,
   selectedDate,
   onDateSelect,
   onEventClick,
 }: {
   currentDate: Date;
   events: CalendarEvent[];
+  holidays: Holiday[];
+  lessons: Lesson[];
+  subjects: Subject[];
   selectedDate: Date | null;
   onDateSelect: (date: Date) => void;
   onEventClick: (event: CalendarEvent) => void;
@@ -315,9 +370,25 @@ function WeekCalendar({
   const weekStart = getStartOfWeek(currentDate);
   const today = new Date();
   const weekDays = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
+  const subjectMap = useMemo(() => new Map(subjects.map((s) => [s.id, s])), [subjects]);
 
   const getEventsForDay = (day: Date) => {
     return events.filter((event) => isSameDay(event.startAt, day));
+  };
+
+  const getHolidaysForDay = (day: Date) => {
+    const dateStr = formatDateForInput(day);
+    return holidays.filter((h) => h.date === dateStr);
+  };
+
+  const getLessonsForDay = (day: Date) => {
+    // Check if this day is a day off (hide lessons on public holidays)
+    const dayHolidays = getHolidaysForDay(day);
+    const isDayOff = dayHolidays.some((h) => holidayService.isDayOff(h));
+    if (isDayOff) return [];
+    
+    const dayOfWeek = getDayOfWeek(day);
+    return lessons.filter((lesson) => lesson.dayOfWeek === dayOfWeek);
   };
 
   return (
@@ -368,6 +439,8 @@ function WeekCalendar({
           {/* Day columns with events */}
           {weekDays.map((day) => {
             const dayEvents = getEventsForDay(day);
+            const dayHolidays = getHolidaysForDay(day);
+            const dayLessons = getLessonsForDay(day);
             const isSelected = selectedDate && isSameDay(day, selectedDate);
 
             return (
@@ -383,6 +456,50 @@ function WeekCalendar({
                     className="h-16 border-b border-r border-border hover:bg-muted/30 transition-colors"
                   />
                 ))}
+
+                {/* Holiday banner at top */}
+                {dayHolidays.map((holiday, idx) => (
+                  <div
+                    key={holiday.name}
+                    className="absolute left-0.5 right-0.5 px-1 py-0.5 rounded text-[10px] font-medium bg-amber-500/20 text-amber-900 dark:text-amber-100 border border-amber-500/30 z-10"
+                    style={{ top: `${idx * 18}px` }}
+                  >
+                    🎉 {holiday.name}
+                  </div>
+                ))}
+
+                {/* Positioned lessons */}
+                {dayLessons.map((lesson) => {
+                  const [hours, minutes] = lesson.startTime.split(":").map(Number);
+                  const [endHours, endMinutes] = lesson.endTime.split(":").map(Number);
+                  const startMinutes = hours * 60 + minutes;
+                  const endMinutesCalc = endHours * 60 + endMinutes;
+                  const durationMinutes = endMinutesCalc - startMinutes;
+                  const topPx = (startMinutes / 60) * HOUR_HEIGHT;
+                  const heightPx = Math.max(20, (durationMinutes / 60) * HOUR_HEIGHT);
+                  const subject = subjectMap.get(lesson.subjectId);
+
+                  return (
+                    <div
+                      key={lesson.id}
+                      className="absolute left-0.5 right-0.5 px-1 py-0.5 rounded text-xs overflow-hidden z-15"
+                      style={{
+                        top: `${topPx}px`,
+                        height: `${heightPx}px`,
+                        minHeight: "20px",
+                        backgroundColor: subject?.color ? `${subject.color}30` : '#6366f130',
+                        borderLeft: `3px solid ${subject?.color || '#6366f1'}`,
+                      }}
+                    >
+                      <div className="font-medium truncate">{subject?.name || 'Lesson'}</div>
+                      {heightPx >= 40 && (
+                        <div className="text-[10px] opacity-80">
+                          {lesson.startTime} - {lesson.endTime}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
 
                 {/* Positioned events */}
                 {dayEvents.map((event) => {
@@ -431,16 +548,32 @@ function WeekCalendar({
 function DayCalendar({
   currentDate,
   events,
+  holidays,
+  lessons,
+  subjects,
   onEventClick,
 }: {
   currentDate: Date;
   events: CalendarEvent[];
+  holidays: Holiday[];
+  lessons: Lesson[];
+  subjects: Subject[];
   onEventClick: (event: CalendarEvent) => void;
 }) {
   const today = new Date();
   const isToday = isSameDay(currentDate, today);
+  const subjectMap = useMemo(() => new Map(subjects.map((s) => [s.id, s])), [subjects]);
 
   const dayEvents = events.filter((event) => isSameDay(event.startAt, currentDate));
+  
+  const dateStr = formatDateForInput(currentDate);
+  const dayHolidays = holidays.filter((h) => h.date === dateStr);
+
+  // Check if this day is a day off (hide lessons on public holidays)
+  const isDayOff = dayHolidays.some((h) => holidayService.isDayOff(h));
+
+  const dayOfWeek = getDayOfWeek(currentDate);
+  const dayLessons = isDayOff ? [] : lessons.filter((lesson) => lesson.dayOfWeek === dayOfWeek);
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
@@ -471,6 +604,49 @@ function DayCalendar({
             {HOURS.map((hour) => (
               <div key={hour} className="h-16 border-b border-border" />
             ))}
+
+            {/* Holiday banners at top */}
+            {dayHolidays.map((holiday, idx) => (
+              <div
+                key={holiday.name}
+                className="absolute left-1 right-1 px-3 py-1 rounded text-sm font-medium bg-amber-500/20 text-amber-900 dark:text-amber-100 border border-amber-500/30 z-10"
+                style={{ top: `${idx * 32}px` }}
+              >
+                🎉 {holiday.name}
+              </div>
+            ))}
+
+            {/* Positioned lessons */}
+            {dayLessons.map((lesson) => {
+              const [hours, minutes] = lesson.startTime.split(":").map(Number);
+              const [endHours, endMinutes] = lesson.endTime.split(":").map(Number);
+              const startMinutes = hours * 60 + minutes;
+              const endMinutesCalc = endHours * 60 + endMinutes;
+              const durationMinutes = endMinutesCalc - startMinutes;
+              const topPx = (startMinutes / 60) * HOUR_HEIGHT;
+              const heightPx = Math.max(40, (durationMinutes / 60) * HOUR_HEIGHT);
+              const subject = subjectMap.get(lesson.subjectId);
+
+              return (
+                <div
+                  key={lesson.id}
+                  className="absolute left-1 right-1 px-3 py-1 rounded text-left overflow-hidden"
+                  style={{
+                    top: `${topPx}px`,
+                    height: `${heightPx}px`,
+                    minHeight: "40px",
+                    backgroundColor: subject?.color ? `${subject.color}30` : '#6366f130',
+                    borderLeft: `4px solid ${subject?.color || '#6366f1'}`,
+                  }}
+                >
+                  <p className="font-medium text-sm truncate">{subject?.name || 'Lesson'}</p>
+                  <p className="text-xs opacity-80">
+                    {lesson.startTime} - {lesson.endTime}
+                  </p>
+                  {lesson.location && <p className="text-xs opacity-80">{lesson.location}</p>}
+                </div>
+              );
+            })}
 
             {/* Positioned events */}
             {dayEvents.map((event) => {
@@ -577,6 +753,7 @@ export default function CalendarPage() {
   const [viewMode, setViewMode] = useState<"month" | "week" | "day">("month");
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingEvent, setEditingEvent] = useState<CalendarEvent | undefined>();
+  const [isLessonDialogOpen, setIsLessonDialogOpen] = useState(false);
 
   const [events, setEvents] = useState<CalendarEvent[]>(() => {
     if (typeof window === "undefined") return [];
@@ -588,9 +765,59 @@ export default function CalendarPage() {
     return subjectService.list();
   });
 
+  const [holidays, setHolidays] = useState<Holiday[]>([]);
+  const [lessons, setLessons] = useState<Lesson[]>(() => {
+    if (typeof window === "undefined") return [];
+    return lessonService.list();
+  });
+  const [showCountryDialog, setShowCountryDialog] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return !storage.get<boolean>(STORAGE_KEYS.COUNTRY_CONFIGURED, false);
+  });
+  const [selectedCountry, setSelectedCountry] = useState(() => {
+    if (typeof window === "undefined") return "US";
+    const settings = settingsService.getSettings();
+    return settings.country || "US";
+  });
+
+  // Fetch holidays on mount
+  useEffect(() => {
+    const loadHolidays = async () => {
+      const settings = settingsService.getSettings();
+      console.log('[Calendar] Loading holidays for country:', settings.country);
+      try {
+        // Use getHolidays which handles caching
+        const fetchedHolidays = await holidayService.getHolidays(settings.country);
+        console.log('[Calendar] Loaded holidays:', fetchedHolidays.length);
+        setHolidays(fetchedHolidays);
+      } catch (error) {
+        console.error("[Calendar] Failed to load holidays:", error);
+      }
+    };
+
+    loadHolidays();
+  }, []);
+
+  // Handle country selection
+  const handleCountryConfirm = async () => {
+    settingsService.updateSettings({ country: selectedCountry });
+    storage.set(STORAGE_KEYS.COUNTRY_CONFIGURED, true);
+    setShowCountryDialog(false);
+    toast.success(`Country set to ${holidayService.SUPPORTED_COUNTRIES.find((c: { code: string; name: string }) => c.code === selectedCountry)?.name || selectedCountry}`);
+    
+    // Reload holidays for the selected country
+    try {
+      const fetchedHolidays = await holidayService.getHolidays(selectedCountry, true);
+      setHolidays(fetchedHolidays);
+    } catch (error) {
+      console.error("[Calendar] Failed to load holidays:", error);
+    }
+  };
+
   const refreshData = () => {
     setEvents(calendarService.list());
     setSubjects(subjectService.list());
+    setLessons(lessonService.list());
   };
 
   const handlePrevPeriod = () => {
@@ -687,6 +914,10 @@ export default function CalendarPage() {
               <TabsTrigger value="day">Day</TabsTrigger>
             </TabsList>
           </Tabs>
+          <Button variant="outline" onClick={() => setIsLessonDialogOpen(true)}>
+            <CalendarIcon className="h-4 w-4 mr-2" />
+            Lesson Plan
+          </Button>
           <Button onClick={handleCreateEvent}>
             <Plus className="h-4 w-4 mr-2" />
             Add Event
@@ -694,13 +925,16 @@ export default function CalendarPage() {
         </div>
       </div>
 
-      {/* Calendar */}
+      {/*Calendar */}
       <Card className="flex-1 p-4 flex overflow-hidden">
         {viewMode === "month" && (
           <>
             <MonthCalendar
               currentDate={currentDate}
               events={events}
+              holidays={holidays}
+              lessons={lessons}
+              subjects={subjects}
               selectedDate={selectedDate}
               onDateSelect={setSelectedDate}
             />
@@ -716,13 +950,23 @@ export default function CalendarPage() {
           <WeekCalendar
             currentDate={currentDate}
             events={events}
+            holidays={holidays}
+            lessons={lessons}
+            subjects={subjects}
             selectedDate={selectedDate}
             onDateSelect={setSelectedDate}
             onEventClick={handleEventClick}
           />
         )}
         {viewMode === "day" && (
-          <DayCalendar currentDate={currentDate} events={events} onEventClick={handleEventClick} />
+          <DayCalendar
+            currentDate={currentDate}
+            events={events}
+            holidays={holidays}
+            lessons={lessons}
+            subjects={subjects}
+            onEventClick={handleEventClick}
+          />
         )}
       </Card>
 
@@ -746,6 +990,42 @@ export default function CalendarPage() {
               </Button>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Lesson Plan Dialog */}
+      <LessonPlanDialog
+        isOpen={isLessonDialogOpen}
+        onClose={() => setIsLessonDialogOpen(false)}
+        onLessonsChanged={refreshData}
+      />
+
+      {/* Country Selection Dialog */}
+      <Dialog open={showCountryDialog} onOpenChange={setShowCountryDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Select Your Country</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground mb-4">
+            Choose your country to display public holidays on your calendar.
+          </p>
+          <Select value={selectedCountry} onValueChange={setSelectedCountry}>
+            <SelectTrigger>
+              <SelectValue placeholder="Select country" />
+            </SelectTrigger>
+            <SelectContent className="max-h-75">
+              {holidayService.SUPPORTED_COUNTRIES.map((country: { code: string; name: string }) => (
+                <SelectItem key={country.code} value={country.code}>
+                  {country.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <DialogFooter className="mt-4">
+            <Button onClick={handleCountryConfirm}>
+              Confirm
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

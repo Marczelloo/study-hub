@@ -134,3 +134,11 @@ export function getCalendarDays(year: number, month: number): Date[] {
 
   return days;
 }
+
+export function getDayOfWeek(
+  date: Date
+): "sunday" | "monday" | "tuesday" | "wednesday" | "thursday" | "friday" | "saturday" {
+  const dayIndex = date.getDay();
+  const dayNames = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"] as const;
+  return dayNames[dayIndex];
+}
