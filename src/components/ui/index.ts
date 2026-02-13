@@ -45,3 +45,4 @@ export {
   SheetDescription,
 } from "./sheet";
 export { Progress } from "./progress";
+export { CookieConsent } from "./cookie-consent";

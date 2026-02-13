@@ -120,6 +120,11 @@ body {
   background: rgb(var(--muted-foreground) / 0.5);
 }
 
+/* Card flip perspective */
+.perspective-1000 {
+  perspective: 1000px;
+}
+
 /* Prose styles for markdown content */
 .prose {
   --tw-prose-body: rgb(var(--foreground));

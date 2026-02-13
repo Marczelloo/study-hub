@@ -7,3 +7,4 @@ export { semesterService, subjectService } from "./semester.service";
 export * as studyService from "./study.service";
 export * as lessonService from "./lesson.service";
 export * as holidayService from "./holiday.service";
+export { consentService } from "./consent.service";
